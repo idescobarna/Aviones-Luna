@@ -682,7 +682,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 }
 *{box-sizing:border-box}
 body{background:var(--night);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.5;
-  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:max(20px,env(safe-area-inset-top,0px)) max(40px,env(safe-area-inset-bottom,0px))}
 .wrap{max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
 header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;border-bottom:1px solid var(--line);padding-bottom:14px}
 .eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
@@ -773,6 +773,11 @@ td a{color:var(--moon)}
 #simSrc{max-width:260px}
 .simtxt{font-size:12.5px;color:var(--dim);margin:8px 0 0;line-height:1.5}
 .simtxt b{color:var(--ink);font-weight:500;font-family:var(--f-mono)}
+#cloudCv{display:block;width:100%;height:170px;border-radius:4px;margin-top:8px;cursor:pointer;background:#0b1220}
+.cdays{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.cleg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--dim);margin-top:6px}
+.cleg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.cleg i.tri{width:0;height:0;border-radius:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid var(--amber)}
 .warn{background:#3a2a10;border:1px solid #7a5a20;color:#ffd9a0;border-radius:5px;padding:8px 10px;font-size:12.5px;margin:0 0 10px}
 .icsrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px}
 .wx{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
@@ -868,11 +873,12 @@ select:disabled{opacity:.45}
           <div class="list" id="calList"></div>
         </div>
         <div id="tabPt" hidden>
-          <p class="summary">Fija un punto (clic en la carta o coordenadas) y la app busca los minutos exactos en que la trayectoria pasa por delante del disco lunar visto desde ahí.</p>
+          <p class="summary">Fija un punto (GPS, clic en la carta o coordenadas) y la app busca los minutos exactos en que la trayectoria pasa por delante del disco lunar visto desde ahí.</p>
           <div class="pt">
             <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--dim)">Latitud<input type="text" id="plat" value="41.36310" size="10"></label>
             <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--dim)">Longitud<input type="text" id="plon" value="2.15560" size="10"></label>
             <label style="display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--dim)">Altura s.n.m. (m)<input type="number" id="phgt" value="120" style="width:90px"></label>
+            <button id="gps">Usar mi ubicación (GPS)</button>
             <button id="scan" class="primary">Buscar ventanas</button>
           </div>
           <p class="summary" id="ptSum"></p>
@@ -898,6 +904,13 @@ select:disabled{opacity:.45}
         <div class="ro"><div class="k">Sol altura</div><div class="v" id="r-sun">–</div></div>
       </div>
       <div class="live" id="live"></div>
+      <div class="panel" id="cloudBox">
+        <div class="hzhead" style="margin-top:0"><p class="lbl" style="margin:0">Nubes hacia la <span class="tn">Luna</span></p>
+          <label class="cdays">Próximos <select id="cloudDays"><option value="3" selected>3 días</option><option value="7">7 días</option><option value="16">16 días</option></select></label></div>
+        <canvas id="cloudCv" aria-label="Previsión de nubes en la dirección del astro, hora a hora"></canvas>
+        <div class="cleg"><span><i style="background:var(--ok)"></i>se verá</span><span><i style="background:var(--warn)"></i>dudoso</span><span><i style="background:var(--bad)"></i>tapada</span><span><i style="background:#2a3550"></i>bajo el horizonte</span><span><i class="tri"></i>ventana del calendario</span></div>
+        <p class="simtxt" id="cloudTxt">Pulsa una hora del gráfico para ponerla en la app.</p>
+      </div>
       <div class="panel" id="simBox">
         <p class="lbl">Simulación de la toma</p>
         <div class="simctl">
@@ -1214,13 +1227,14 @@ function kmlFor(w){const o=opts();const esc=v=>String(v).replace(/&/g,'&amp;').r
 let DL=null;$('kml').hidden=false;
 $('kml').onclick=async()=>{if(!selWin)return;const l=local(T.t0+selWin.i0*T.step);const name=`${TARGET==='sun'?'sol':'luna'}-${APK}-${selWin.op.id}-${pad(l.d)}${pad(l.mo)}-${pad(l.h)}${pad(l.mi)}.kml`;try{await saveFile(name,'application/vnd.google-earth.kml+xml',kmlFor(selWin));$('kmlMsg').textContent=`Guardado ${name}. Ábrelo en Google Earth o impórtalo en Google My Maps.`;}catch(e){$('kmlMsg').textContent='No se ha guardado el archivo.';}};
 
+let scanSeq=0;
 async function runScan(){
-  if(!T)return;
+  if(!T)return;const seq=++scanSeq;
   const la=parseFloat($('plat').value.replace(',','.')),lo=parseFloat($('plon').value.replace(',','.'));
   if(!isFinite(la)||!isFinite(lo)){$('ptSum').textContent='Escribe una latitud y una longitud válidas (por ejemplo 41.36310 y 2.15560).';return;}
   myPt=xy(la,lo);myH=+$('phgt').value||0;drawAll();
   $('ptSum').textContent='Buscando… 0 %';
-  PTEV=await scanPoint(T,activeOps(),myPt,myH,+$('plane').value,p=>$('ptSum').textContent=`Buscando… ${Math.round(p*100)} %`,opts());scanned=true;
+  PTEV=await scanPoint(T,activeOps(),myPt,myH,+$('plane').value,p=>$('ptSum').textContent=`Buscando… ${Math.round(p*100)} %`,opts());if(seq!==scanSeq)return;scanned=true;
   const L=$('ptList');const np=nearPlace(myPt[0],myPt[1]);
   $('ptSum').textContent=PTEV.length?`${PTEV.length} ventanas desde ${np.name} (${fmt(myH)} m). La hora central es cuando la trayectoria cruza el centro del disco.`:`Ninguna ventana en el periodo desde ${np.name} con las operaciones activas. Prueba otro punto o activa más operaciones.`;
   L.innerHTML=PTEV.map((e,k)=>{const l=local(e.t0);const ill=T.ill[e.i],sun=T.sun[e.i];const d=e.det;const dur=Math.round((e.t1-e.t0)/1000)+5;
@@ -1527,10 +1541,59 @@ function wxHTML(t,opId,az){
   const w=wxAt(t,az);if(!w)return'<span class="chip">Sin previsión todavía (más de 16 días)</span>';
   const op=OPS.find(o=>o.id===opId);const lowmid=Math.max(w.low,w.mid);
   const cls=lowmid<25&&w.vis>15000?'good':lowmid<60&&w.vis>8000?'mid':'bad';
-  const r=op?rwyLikely(op,w):null;
-  return`<span class="chip wx-${cls}">☁ hacia ${azName(az)}: baja ${w.low} % · media ${w.mid} % · alta ${w.high} %</span><span class="chip">vis. ${fmt(w.vis/1000,0)} km</span><span class="chip">viento ${fmt(w.wd)}° ${fmt(w.ws)} km/h${w.gust>w.ws+10?` (rachas ${fmt(w.gust)})`:''}</span>${r?`<span class="chip wx-${r.ok===true?'good':r.ok===false?'bad':'mid'}">${r.txt}</span>`:''}`;
+  const r=op?rwyLikely(op,w):null;const mv=moonVis(w);
+  return`<span class="chip wx-${mv>=70?'good':mv>=35?'mid':'bad'}"><b>${TN()} visible ≈ ${mv} %</b></span><span class="chip wx-${cls}">☁ hacia ${azName(az)}: baja ${w.low} % · media ${w.mid} % · alta ${w.high} %</span><span class="chip">vis. ${fmt(w.vis/1000,0)} km</span><span class="chip">viento ${fmt(w.wd)}° ${fmt(w.ws)} km/h${w.gust>w.ws+10?` (rachas ${fmt(w.gust)})`:''}</span>${r?`<span class="chip wx-${r.ok===true?'good':r.ok===false?'bad':'mid'}">${r.txt}</span>`:''}`;
 }
-function wxFill(root){(root||document).querySelectorAll('.wx').forEach(el=>{el.innerHTML=wxHTML(+el.dataset.t,el.dataset.op,+el.dataset.az);});}
+function wxFill(root){(root||document).querySelectorAll('.wx').forEach(el=>{el.innerHTML=wxHTML(+el.dataset.t,el.dataset.op,+el.dataset.az);});if(typeof cloudDraw==='function')cloudDraw(true);}
+/* probabilidad aproximada de ver el disco: las nubes bajas y medias tapan, las altas velan */
+function moonVis(w){if(!w)return null;let p=(1-w.low/100)*(1-0.85*w.mid/100)*(1-0.3*w.high/100);if(w.vis<10000)p*=Math.max(0.3,w.vis/10000);return Math.round(100*p);}
+
+/* ===== Nubes hacia la Luna: gráfico hora a hora ===== */
+const CLD={key:null,bars:null,t0:0,t1:0};
+function cloudBars(){
+  const days=+$('cloudDays').value;const key=[WX.key,!!WX.data,days,TARGET,APK,CAL.length].join('|');
+  if(CLD.key===key&&CLD.bars)return CLD.bars;
+  const t0=Math.floor(Date.now()/3600e3)*3600e3,t1=t0+days*86400e3;const bars=[];
+  for(let t=t0;t<t1;t+=3600e3){const m=moonAt(t+1800e3);const sun=sunAlt(t+1800e3);const w=m.alt>0?wxAt(t+1800e3,m.az):null;bars.push({t,alt:m.alt,az:m.az,sun,w,v:w?moonVis(w):null});}
+  CLD.key=key;CLD.bars=bars;CLD.t0=t0;CLD.t1=t1;return bars;
+}
+function cloudDraw(){
+  const cv=$('cloudCv');if(!cv||!cv.offsetParent)return;const ctx=cv.getContext('2d');const W=cv.clientWidth,H=170,dpr=window.devicePixelRatio||1;
+  if(cv.width!==Math.round(W*dpr)){cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);}
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle='#0b1220';ctx.fillRect(0,0,W,H);
+  ctx.font='11px "IBM Plex Mono",monospace';
+  if(WX.err||!WX.data){ctx.fillStyle='#8a96ad';ctx.fillText(WX.err?'Sin previsión: '+(typeof NETMSG!=='undefined'?'necesita conexión (versión web o app Android)':'error'):'Cargando previsión…',12,24);
+    $('cloudTxt').textContent=WX.err?NETMSG:'Cargando la previsión de Open-Meteo…';return;}
+  const bars=cloudBars();const n=bars.length,top=16,bot=H-20,bw=W/n,X=t=>(t-CLD.t0)/(CLD.t1-CLD.t0)*W;
+  // fondo día/noche
+  bars.forEach((b,i)=>{if(b.sun>0){ctx.fillStyle='rgba(120,150,210,.10)';ctx.fillRect(i*bw,top,bw+.5,bot-top);}});
+  // rejilla 0-50-100 %
+  ctx.strokeStyle='rgba(255,255,255,.07)';ctx.lineWidth=1;[0,.5,1].forEach(f=>{const y=bot-(bot-top)*f;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();});
+  ctx.fillStyle='#5f6b84';ctx.fillText('100 %',2,top+9);
+  // barras: altura = probabilidad de ver el astro
+  bars.forEach((b,i)=>{const x=i*bw;
+    if(b.alt<=0){ctx.fillStyle='#1c2539';ctx.fillRect(x,bot-3,Math.max(1,bw-.5),3);return;}
+    if(b.v==null){ctx.fillStyle='#2a3550';ctx.fillRect(x,bot-6,Math.max(1,bw-.5),6);return;}
+    const h=Math.max(3,(bot-top)*b.v/100);ctx.fillStyle=b.v>=70?'#7fd49b':b.v>=35?'#f2c14e':'#ef8a8a';ctx.fillRect(x,bot-h,Math.max(1,bw-.5),h);});
+  // días
+  ctx.fillStyle='#8a96ad';ctx.strokeStyle='rgba(255,255,255,.18)';
+  for(let t=CLD.t0;t<CLD.t1;t+=3600e3){const l=local(t);if(l.h===0){const x=X(t);ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,bot);ctx.stroke();}
+    if(l.h===12){const x=X(t);ctx.textAlign='center';ctx.fillText(`${WD[l.wd]} ${l.d}`,x,H-5);ctx.textAlign='left';}}
+  // ventanas del calendario
+  for(const w of CAL){const tb=T.t0+w.bi*T.step;if(tb<CLD.t0||tb>CLD.t1)continue;const x=X(tb);ctx.fillStyle=w.op.col;ctx.beginPath();ctx.moveTo(x-5,2);ctx.lineTo(x+5,2);ctx.lineTo(x,11);ctx.closePath();ctx.fill();}
+  // hora seleccionada
+  const tc=curT();if(tc>=CLD.t0&&tc<=CLD.t1){const x=X(tc);ctx.strokeStyle='#efe7c8';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x,top-4);ctx.lineTo(x,bot);ctx.stroke();}
+  // texto de la hora seleccionada
+  const m=moonAt(tc);const wv=m.alt>0?wxAt(tc,m.az):null;
+  if(tc<CLD.t0-3600e3||tc>CLD.t1)$('cloudTxt').textContent='La hora seleccionada está fuera de la previsión (llega a 16 días).';
+  else if(m.alt<=0)$('cloudTxt').innerHTML=`<b>${hm(tc)}</b> · ${TN()==='Sol'?'el Sol':'la Luna'} está bajo el horizonte.`;
+  else if(!wv)$('cloudTxt').textContent='Sin previsión para esa hora.';
+  else{const v=moonVis(wv);$('cloudTxt').innerHTML=`<b>${WD[local(tc).wd]} ${local(tc).d} · ${hm(tc)}</b> · ${TN()} a ${fmt(m.alt,1)}° hacia ${azName(m.az)} · nubes bajas <b>${wv.low} %</b>, medias <b>${wv.mid} %</b>, altas <b>${wv.high} %</b> · visibilidad <b>${fmt(wv.vis/1000,0)} km</b> → <b style="color:${v>=70?'var(--ok)':v>=35?'var(--warn)':'var(--bad)'}">${v>=70?'se verá':v>=35?'dudoso':'probablemente tapada'} (≈ ${v} %)</b>. Previsión a 25 km en esa dirección.`;}
+}
+$('cloudCv').addEventListener('click',e=>{if(!CLD.bars)return;const r=$('cloudCv').getBoundingClientRect();const t=CLD.t0+(e.clientX-r.left)/r.width*(CLD.t1-CLD.t0);setTime(t);});
+$('cloudDays').addEventListener('change',()=>cloudDraw());
+{const _dA2=drawAll;drawAll=function(){_dA2.apply(this,arguments);cloudDraw();};}
+window.addEventListener('resize',()=>cloudDraw());
 
 /* ===== 3 · Aviones en directo ===== */
 const LIVE={on:false,timer:null,ac:[],src:'',layer:null};
@@ -1647,6 +1710,36 @@ function icsBuild(){
 $('icsBtn').onclick=async()=>{if(!CAL.length){$('icsMsg').textContent='No hay ventanas que exportar.';return;}const name=`transitos-${APK}-${TARGET==='sun'?'sol':'luna'}.ics`;const ok=await saveFile(name,'text/calendar',icsBuild());$('icsMsg').textContent=ok?`${CAL.length} ventanas en ${name}, con aviso 2 h antes. Ábrelo para añadirlas a tu calendario.`:'No se ha podido guardar el archivo.';};
 
 /* ===== Sol en la simulación: aviso ===== */
+/* ===== GPS y app Android (Capacitor) ===== */
+const NATIVE=!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
+const CP=NATIVE?(window.Capacitor.Plugins||{}):{};
+async function getPosition(){
+  if(NATIVE&&CP.Geolocation){try{await CP.Geolocation.requestPermissions();}catch(e){}
+    const p=await CP.Geolocation.getCurrentPosition({enableHighAccuracy:true,timeout:20000});return p.coords;}
+  return await new Promise((res,rej)=>{if(!navigator.geolocation)return rej(new Error('sin GPS'));navigator.geolocation.getCurrentPosition(p=>res(p.coords),rej,{enableHighAccuracy:true,timeout:20000,maximumAge:30000});});
+}
+$('gps').onclick=async()=>{
+  $('ptSum').textContent='Buscando tu posición…';
+  try{const c=await getPosition();
+    if(typeof c.altitude==='number'&&isFinite(c.altitude))$('phgt').value=Math.round(c.altitude);
+    setMyPt(c.latitude,c.longitude);map.setView([c.latitude,c.longitude],15);
+    const d=Math.hypot(...xy(c.latitude,c.longitude))/1000;
+    if(d>60){$('ptSum').textContent=`Posición fijada (±${Math.round(c.accuracy||0)} m), a ${fmt(d)} km de ${AP.name}: elige el aeropuerto más cercano y pulsa «Buscar ventanas».`;}else runScan();
+  }catch(e){$('ptSum').textContent='No se ha podido leer la posición. Concede el permiso de ubicación y activa el GPS, o marca tu punto en el mapa.';}
+};
+if(NATIVE){
+  // guardar archivos: se escriben en la caché y se abre el menú «Compartir» (Drive, Calendario, Google Earth…)
+  saveFile=async function(name,mime,text){
+    try{const r=await CP.Filesystem.writeFile({path:name,data:text,directory:'CACHE',encoding:'utf8'});
+      await CP.Share.share({title:name,url:r.uri,dialogTitle:'Guardar o abrir '+name});return true;}catch(e){return false;}
+  };
+  // enlaces externos (Google Maps, fuentes…) en el navegador del sistema
+  document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a[href^="http"]');if(!a)return;e.preventDefault();
+    const u=a.href;if(CP.Browser)CP.Browser.open({url:u});else window.open(u,'_system');},true);
+  document.documentElement.classList.add('native');
+  try{CP.StatusBar&&CP.StatusBar.setBackgroundColor({color:'#0a101c'});}catch(e){}
+}
+
 setTargetUI();
 
 renderOps();
